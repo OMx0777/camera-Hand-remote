@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture-Controlled Solar System</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        }
+        
+        #canvas-container { 
+            width: 100vw; 
+            height: 100vh; 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            z-index: 1; 
+        }
+
+        #ui-layer { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            z-index: 10; 
+            color: white; 
+            pointer-events: none; 
+        }
+        
+        h1 { 
+            margin: 0; 
+            font-size: 2.2rem; 
+            letter-spacing: 3px; 
+            text-transform: uppercase; 
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 0 30px rgba(255, 165, 0, 0.5);
+            filter: drop-shadow(0 0 10px rgba(255, 215, 0, 0.3));
+        }
+        
+        .status-box { 
+            background: rgba(10, 25, 47, 0.85); 
+            padding: 20px; 
+            border-radius: 12px; 
+            border: 2px solid rgba(0, 255, 255, 0.4); 
+            margin-top: 15px; 
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .info-row { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 8px; 
+            font-size: 1.1rem; 
+            gap: 15px;
+        }
+        
+        .highlight { 
+            color: #00ffff; 
+            font-weight: bold; 
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+        
+        .controls-list { 
+            font-size: 0.9rem; 
+            color: #bbb; 
+            margin-top: 15px; 
+            line-height: 1.8; 
+        }
+        
+        .key { 
+            color: #ffaa00; 
+            font-weight: bold; 
+        }
+
+        #cam-wrapper { 
+            position: absolute; 
+            bottom: 20px; 
+            right: 20px; 
+            width: 280px; 
+            height: 210px; 
+            z-index: 20; 
+            border-radius: 12px; 
+            overflow: hidden; 
+            border: 3px solid rgba(0, 255, 255, 0.6); 
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+            transform: scaleX(-1);
+            background: rgba(0, 0, 0, 0.5);
+        }
+        
+        #video-feed { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover; 
+            opacity: 0.7; 
+        }
+        
+        #debug-canvas { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            z-index: 2; 
+        }
+        
+        #loader { 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            color: white; 
+            font-size: 1.5rem; 
+            z-index: 100; 
+            background: rgba(0,0,0,0.9); 
+            padding: 30px 40px; 
+            border-radius: 15px;
+            border: 2px solid rgba(0, 255, 255, 0.5);
+            text-align: center;
+        }
+
+        .planet-label {
+            position: absolute;
+            color: white;
+            font-size: 12px;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="loader">
+        <div>🌌 Loading Solar System & AI...</div>
+        <div style="font-size: 0.9rem; margin-top: 10px; color: #aaa;">Initializing hand tracking</div>
+    </div>
+
+    <div id="ui-layer">
+        <h1>🌟 Solar Explorer</h1>
+        <div class="status-box">
+            <div class="info-row">
+                <span>Target:</span>
+                <span id="target-display" class="highlight">Sun</span>
+            </div>
+            <div class="info-row">
+                <span>Action:</span>
+                <span id="action-display" class="highlight">Hovering</span>
+            </div>
+            <div class="info-row">
+                <span>Hand:</span>
+                <span id="hand-status" style="color:#ff4444;">Searching...</span>
+            </div>
+            <div class="info-row">
+                <span>Zoom:</span>
+                <span id="zoom-display" class="highlight">50%</span>
+            </div>
+            
+            <div class="controls-list">
+                <div><span class="key">☝️ 1 Finger:</span> Mercury</div>
+                <div><span class="key">✌️ 2 Fingers:</span> Venus</div>
+                <div><span class="key">🤟 3 Fingers:</span> Earth</div>
+                <div><span class="key">🖖 4 Fingers:</span> Mars</div>
+                <div><span class="key">🖐️ 5 Fingers:</span> Jupiter</div>
+                <hr style="border-color: #444; margin: 10px 0">
+                <div><span class="key">✊ Fist:</span> Zoom IN (slower)</div>
+                <div><span class="key">🖐️ Open Hand:</span> Zoom OUT (slower)</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="cam-wrapper">
+        <video id="video-feed" playsinline></video>
+        <canvas id="debug-canvas"></canvas>
+    </div>
+
+    <div id="canvas-container"></div>
+
+<script>
+    // --- CONFIGURATION ---
+    const CONFIG = {
+        zoomSpeed: 0.03,        // Slower zoom
+        minZoom: 3,             // Closer
+        maxZoom: 35,            // Further
+        cameraLerpSpeed: 0.03,  // Smoother camera movement
+        gestureDebounce: 150,   // ms to wait before switching
+    };
+
+    // State
+    let state = {
+        targetPlanetIndex: 0,
+        currentZoom: 18,
+        isZoomingIn: false,
+        isZoomingOut: false,
+        handDetected: false,
+        lastGestureTime: 0,
+        lastFingerCount: 0,
+    };
+
+    // Scene Setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.0015);
+    
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 3000);
+    camera.position.set(0, 25, 50);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+    const textureLoader = new THREE.TextureLoader();
+
+    // --- ENHANCED STARFIELD ---
+    const createStars = () => {
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+        const colors = [];
+        
+        for (let i = 0; i < 10000; i++) {
+            vertices.push(
+                THREE.MathUtils.randFloatSpread(2000),
+                THREE.MathUtils.randFloatSpread(2000),
+                THREE.MathUtils.randFloatSpread(2000)
+            );
+            
+            const color = new THREE.Color();
+            color.setHSL(0.6, Math.random() * 0.3, 0.7 + Math.random() * 0.3);
+            colors.push(color.r, color.g, color.b);
+        }
+        
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        
+        const material = new THREE.PointsMaterial({ 
+            size: 1.5, 
+            vertexColors: true,
+            transparent: true, 
+            opacity: 0.9,
+            sizeAttenuation: true
+        });
+        
+        const stars = new THREE.Points(geometry, material);
+        scene.add(stars);
+        return stars;
+    };
+    const stars = createStars();
+
+    // --- LIGHTING ---
+    const ambientLight = new THREE.AmbientLight(0x222244, 0.3);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.PointLight(0xfff4e6, 3, 800);
+    sunLight.position.set(0, 0, 0);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    scene.add(sunLight);
+
+    // Add rim light
+    const rimLight = new THREE.DirectionalLight(0x4488ff, 0.5);
+    rimLight.position.set(-50, 50, -50);
+    scene.add(rimLight);
+
+    const planets = [];
+
+    // --- PLANET CREATION ---
+    function createPlanet(name, size, distance, speed, color, hasRings = false) {
+        const pivot = new THREE.Object3D();
+        scene.add(pivot);
+
+        // Enhanced sphere geometry with more segments
+        const geom = new THREE.SphereGeometry(size, 128, 128);
+        const mat = new THREE.MeshStandardMaterial({ 
+            color: color, 
+            roughness: 0.85,
+            metalness: 0.2,
+            emissive: color,
+            emissiveIntensity: 0.05
+        });
+
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.position.x = distance;
+        pivot.add(mesh);
+
+        // Enhanced orbit visualization
+        if (distance > 0) {
+            const points = [];
+            const segments = 256;
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                points.push(new THREE.Vector3(
+                    Math.cos(angle) * distance,
+                    0,
+                    Math.sin(angle) * distance
+                ));
+            }
+            const orbitGeom = new THREE.BufferGeometry().setFromPoints(points);
+            const orbitMat = new THREE.LineBasicMaterial({ 
+                color: 0x444466, 
+                transparent: true, 
+                opacity: 0.15 
+            });
+            const orbit = new THREE.Line(orbitGeom, orbitMat);
+            scene.add(orbit);
+        }
+
+        // Atmosphere glow
+        if (name === "Earth") {
+            const glowGeom = new THREE.SphereGeometry(size * 1.15, 64, 64);
+            const glowMat = new THREE.MeshBasicMaterial({ 
+                color: 0x4488ff, 
+                transparent: true, 
+                opacity: 0.15,
+                side: THREE.BackSide,
+                blending: THREE.AdditiveBlending
+            });
+            const glow = new THREE.Mesh(glowGeom, glowMat);
+            mesh.add(glow);
+        }
+
+        if (name === "Venus") {
+            const glowGeom = new THREE.SphereGeometry(size * 1.12, 64, 64);
+            const glowMat = new THREE.MeshBasicMaterial({ 
+                color: 0xffaa44, 
+                transparent: true, 
+                opacity: 0.12,
+                side: THREE.BackSide,
+                blending: THREE.AdditiveBlending
+            });
+            const glow = new THREE.Mesh(glowGeom, glowMat);
+            mesh.add(glow);
+        }
+
+        // Rings for planets
+        if (hasRings) {
+            const ringGeom = new THREE.RingGeometry(size * 1.5, size * 2.2, 128);
+            const ringMat = new THREE.MeshBasicMaterial({ 
+                color: 0xccaa88, 
+                side: THREE.DoubleSide, 
+                transparent: true, 
+                opacity: 0.6 
+            });
+            const ring = new THREE.Mesh(ringGeom, ringMat);
+            ring.rotation.x = Math.PI / 2;
+            mesh.add(ring);
+        }
+
+        const planetObj = { name, mesh, pivot, distance, speed, size };
+        planets.push(planetObj);
+        return planetObj;
+    }
+
+    // --- BUILD SOLAR SYSTEM ---
+    
+    // Sun
+    const sunGeom = new THREE.SphereGeometry(5.5, 128, 128);
+    const sunMat = new THREE.MeshBasicMaterial({ 
+        color: 0xffdd44,
+        emissive: 0xffaa00,
+        emissiveIntensity: 1
+    });
+    const sunMesh = new THREE.Mesh(sunGeom, sunMat);
+    scene.add(sunMesh);
+    
+    // Sun corona effect
+    const coronaGeom = new THREE.SphereGeometry(7, 64, 64);
+    const coronaMat = new THREE.MeshBasicMaterial({ 
+        color: 0xffaa00, 
+        transparent: true, 
+        opacity: 0.15,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending
+    });
+    const corona = new THREE.Mesh(coronaGeom, coronaMat);
+    sunMesh.add(corona);
+
+    planets.push({ 
+        name: "Sun", 
+        mesh: sunMesh, 
+        pivot: new THREE.Object3D(), 
+        distance: 0, 
+        speed: 0, 
+        size: 5.5 
+    });
+
+    // Planets with slower, more realistic speeds
+    createPlanet("Mercury", 0.9, 12, 0.004, 0x8c7853);
+    createPlanet("Venus", 1.7, 18, 0.003, 0xe8cda2);
+    createPlanet("Earth", 1.8, 26, 0.0025, 0x2f6a9e);
+    createPlanet("Mars", 1.2, 35, 0.002, 0xc1440e);
+    createPlanet("Jupiter", 4.5, 55, 0.0012, 0xc88b3a, true);
+
+    document.getElementById('loader').style.display = 'none';
+
+    // --- COMPUTER VISION ---
+    const videoElement = document.getElementById('video-feed');
+    const debugCanvas = document.getElementById('debug-canvas');
+    const debugCtx = debugCanvas.getContext('2d');
+    
+    const targetEl = document.getElementById('target-display');
+    const actionEl = document.getElementById('action-display');
+    const handStatusEl = document.getElementById('hand-status');
+    const zoomEl = document.getElementById('zoom-display');
+
+    function countExtendedFingers(landmarks) {
+        let count = 0;
+        
+        // Thumb - check if tip is further from wrist than base
+        const thumbTip = landmarks[4];
+        const thumbBase = landmarks[2];
+        const wrist = landmarks[0];
+        const thumbDist = Math.abs(thumbTip.x - wrist.x);
+        const thumbBaseDist = Math.abs(thumbBase.x - wrist.x);
+        if (thumbDist > thumbBaseDist * 1.2) count++;
+        
+        // Other fingers - check if tip is above PIP joint
+        const fingers = [
+            [8, 6],   // Index
+            [12, 10], // Middle
+            [16, 14], // Ring
+            [20, 18]  // Pinky
+        ];
+        
+        fingers.forEach(([tip, pip]) => {
+            if (landmarks[tip].y < landmarks[pip].y - 0.02) count++;
+        });
+        
+        return count;
+    }
+
+    function onResults(results) {
+        debugCtx.save();
+        debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+        debugCtx.drawImage(results.image, 0, 0, debugCanvas.width, debugCanvas.height);
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            state.handDetected = true;
+            handStatusEl.innerText = "✓ Active";
+            handStatusEl.style.color = "#00ff88";
+
+            const landmarks = results.multiHandLandmarks[0];
+            
+            // Draw with enhanced styling
+            drawConnectors(debugCtx, landmarks, HAND_CONNECTIONS, {
+                color: '#00ffaa', 
+                lineWidth: 3
+            });
+            drawLandmarks(debugCtx, landmarks, {
+                color: '#ff0066', 
+                fillColor: '#ff0066',
+                lineWidth: 2, 
+                radius: 3
+            });
+
+            const fingers = countExtendedFingers(landmarks);
+            const currentTime = Date.now();
+            
+            // Debounce gesture changes
+            if (fingers !== state.lastFingerCount && 
+                currentTime - state.lastGestureTime > CONFIG.gestureDebounce) {
+                
+                state.lastFingerCount = fingers;
+                state.lastGestureTime = currentTime;
+                
+                // Planet selection (1-5 fingers)
+                if (fingers >= 1 && fingers <= 5) {
+                    state.targetPlanetIndex = fingers;
+                    targetEl.innerText = planets[fingers].name;
+                }
+            }
+
+            // Zoom controls with better detection
+            const isFist = fingers === 0;
+            const isOpen = fingers >= 5;
+            
+            state.isZoomingIn = isFist && !isOpen;
+            state.isZoomingOut = isOpen && !isFist;
+
+            // Update action display
+            if (state.isZoomingIn) {
+                actionEl.innerText = "🔍 Zooming IN";
+            } else if (state.isZoomingOut) {
+                actionEl.innerText = "🔭 Zooming OUT";
+            } else {
+                actionEl.innerText = `${fingers} finger(s)`;
+            }
+
+            // Display finger count for debugging
+            debugCtx.fillStyle = '#00ffaa';
+            debugCtx.font = 'bold 24px Arial';
+            debugCtx.fillText(`Fingers: ${fingers}`, 10, 30);
+
+        } else {
+            state.handDetected = false;
+            state.isZoomingIn = false;
+            state.isZoomingOut = false;
+            handStatusEl.innerText = "✗ No Hand";
+            handStatusEl.style.color = "#ff4444";
+            actionEl.innerText = "Waiting...";
+        }
+        
+        debugCtx.restore();
+    }
+
+    // Init MediaPipe
+    const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6
+    });
+    hands.onResults(onResults);
+
+    // Init Camera
+    const cameraUtils = new Camera(videoElement, {
+        onFrame: async () => {
+            await hands.send({image: videoElement});
+        },
+        width: 640,
+        height: 480
+    });
+    cameraUtils.start();
+
+    // --- ANIMATION LOOP ---
+    let time = 0;
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        time += 0.01;
+
+        // Rotate stars slowly
+        stars.rotation.y += 0.0001;
+
+        // Animate planets
+        planets.forEach((p, i) => {
+            if (p.name !== "Sun") {
+                p.pivot.rotation.y += p.speed;
+                p.mesh.rotation.y += 0.002;
+            } else {
+                p.mesh.rotation.y += 0.0005;
+                // Pulse sun corona
+                const scale = 1 + Math.sin(time) * 0.05;
+                corona.scale.set(scale, scale, scale);
+            }
+        });
+
+        // Zoom handling with smoother acceleration
+        if (state.isZoomingIn) {
+            state.currentZoom = Math.max(
+                CONFIG.minZoom, 
+                state.currentZoom - CONFIG.zoomSpeed
+            );
+        }
+        if (state.isZoomingOut) {
+            state.currentZoom = Math.min(
+                CONFIG.maxZoom, 
+                state.currentZoom + CONFIG.zoomSpeed
+            );
+        }
+
+        // Update zoom display
+        const zoomPercent = Math.round(
+            ((state.currentZoom - CONFIG.minZoom) / (CONFIG.maxZoom - CONFIG.minZoom)) * 100
+        );
+        zoomEl.innerText = `${zoomPercent}%`;
+
+        // Smooth camera movement
+        const targetPlanet = planets[state.targetPlanetIndex];
+        if (targetPlanet) {
+            const planetPos = new THREE.Vector3();
+            targetPlanet.mesh.getWorldPosition(planetPos);
+
+            // Dynamic offset based on planet size
+            const heightOffset = state.currentZoom * 0.15 + targetPlanet.size;
+            const distanceOffset = state.currentZoom;
+            
+            const desiredPos = planetPos.clone().add(
+                new THREE.Vector3(
+                    Math.sin(time * 0.1) * 2,
+                    heightOffset,
+                    distanceOffset
+                )
+            );
+            
+            camera.position.lerp(desiredPos, CONFIG.cameraLerpSpeed);
+            
+            const lookTarget = planetPos.clone();
+            const currentLookAt = new THREE.Vector3();
+            camera.getWorldDirection(currentLookAt);
+            currentLookAt.multiplyScalar(10).add(camera.position);
+            currentLookAt.lerp(lookTarget, CONFIG.cameraLerpSpeed * 2);
+            camera.lookAt(currentLookAt);
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Set canvas sizes
+    debugCanvas.width = 640;
+    debugCanvas.height = 480;
+
+    animate();
+
+</script>
+</body>
+</html>
